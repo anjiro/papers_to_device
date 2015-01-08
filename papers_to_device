@@ -1,0 +1,186 @@
+#!/usr/bin/env python
+
+import subprocess, os, shutil, re, cPickle
+from colortext import colortext
+
+def c(s):
+	return colortext(s, 'cyan')
+def y(s):
+	return colortext(s, 'yellow')
+
+
+def search_parents(path, filename):
+  """Search path and its parents for the given filename. Return the
+  full absolute path to the file, including the filename. Return None if
+  the root of the drive is reached and nothing is found."""
+  f = os.path.basename(filename)
+  if f != filename:
+    raise NameError("Filename must be without path")
+  c = os.path.join(path, f)
+  if os.path.exists(c):
+    return c
+  p = os.path.abspath(os.path.normpath(os.path.join(path, os.path.pardir)))
+  if p == path:
+    return None
+  print p
+  return search_parents(p, filename)
+
+
+def get_papers():
+	script = """
+	set z to ""
+	tell application "Papers"
+		repeat with p in (selected publications of front library window as list)
+			set original_filename to the full path of the primary file item of p
+			set new_filename to my strip(the publication year of p) & "-" & my strip(the family name of the first author item of p) & " - " & my strip(the title of p) & ".pdf"
+			set l to original_filename & "	" & new_filename
+			set z to z & "\n" & l
+		end repeat
+	end tell
+	return z
+
+	on strip(str)
+		local str, whiteSpace
+		try
+			set str to str as string
+			set whiteSpace to {character id 10, return, space, tab}
+			try
+				repeat while str's first character is in whiteSpace
+					set str to str's text 2 thru -1
+				end repeat
+				repeat while str's last character is in whiteSpace
+					set str to str's text 1 thru -2
+				end repeat
+				return str
+			on error number -1728
+				return ""
+			end try
+		on error eMsg number eNum
+			error "Can't strip: " & eMsg number eNum
+		end try
+	end strip
+"""
+
+	osa = subprocess.Popen(['osascript', '-'],
+												 stdin=subprocess.PIPE,
+												 stdout=subprocess.PIPE,
+												 stderr=subprocess.PIPE)
+	o,e = osa.communicate(script)
+
+	if e:
+		raise IOError("ERROR: %s" % e)
+
+	print "\n\n%s\n\n" % o
+
+	r = [p.strip().split('\t') for p in o.split('\n') if p]
+	print r
+	return r
+
+
+def papers_to_dir(dest, root=None, pickledict='.papers.pickle', test=False):
+	"""Copy papers from Papers to dest, updating correspondence dict on
+	root/.papers.pickle. If root is None, search parent directories of
+	dest to find pickledict. Don't overwrite files newere than Papers
+	source."""
+	if root is None:
+		pfile = search_parents(dest, pickledict)
+		if pfile is None:
+			raise ValueError("Couldn't find dictionary %s; specify root" % pickledict)
+	else:
+		pfile = os.path.join(root, pickledict)
+
+	try:
+		cd = cPickle.load(open(pfile))
+	except IOError:
+		cd = {}
+	update_pickle = False
+
+	if not os.path.exists(dest):
+		os.makedirs(dest)
+	for origfn,d in get_papers():
+		destfn = os.path.join(dest, re.sub(':\s', ' - ', d)) #remove colons in names
+		cd[os.path.relpath(destfn, root)] = origfn
+
+		#Don't update changed or older files
+		if os.path.exists(destfn):
+			otime = os.stat(origfn).st_mtime 
+			dtime = os.stat(destfn).st_mtime
+			if otime == dtime:
+				print "Not updating unchanged files\n  %s\nand\n	%s\n" % (
+					c(destfn), y(origfn))
+				continue
+			elif otime > dtime:
+				print "WARNING: Not overwriting newer file\n	%s\nwith older\n %s\n" % (
+					c(destfn), y(origfn))
+				continue
+
+		print "%s => %s" % (y(os.path.basename(origfn)),
+			c(os.path.basename(destfn)))
+		update_pickle = True
+		if not test:
+			shutil.copy2(origfn, destfn)
+
+	if update_pickle:
+		if test:
+			from pprint import pprint
+			print "Would pickle the following to %s" % pickledict
+			pprint(cd)
+		else:
+			cPickle.dump(cd, open(pfile, 'w'),  cPickle.HIGHEST_PROTOCOL)
+
+
+def papers_from_dir(root, pickledict='.papers.pickle', test=False):
+	"""Copy papers indicated in pickledict on root to original
+	destinations if:
+		- destination file still exists
+		- file on root has changed
+	Update pickledict to remove missing files on root.
+	"""
+	pfile = os.path.join(root, pickledict)
+	cd = unpickle(pfile)
+	update_pickle = False
+	for destfn, origfn in cd.iteritems():
+		destfn = os.path.join(root, destfn)
+		if os.path.exists(origfn):
+			if os.stat(destfn).st_mtime > os.stat(origfn).st_mtime:
+				 print "%s => %s" % (c(os.path.basename(destfn)),
+					 y(os.path.basename(origfn)))
+				 if not test:
+					 shutil.copy2(destfn, origfn)
+		else:
+			print "Remove missing from dict: %s" % origfn
+			del(pickledict[origfn])
+			update_pickle = True
+	if update_pickle:
+		if test:
+			from pprint import pprint
+			print "Would pickle the following to %s\n" % pickledict
+			pprint(cd)
+		else:
+			cPickle.dump(cd, open(pickledict, 'w'),  cPickle.HIGHEST_PROTOCOL)
+
+
+if __name__ == "__main__":
+	import sys, argparse
+
+	p = argparse.ArgumentParser(
+		description="Copy Papers files to or from a location")
+	g = p.add_mutually_exclusive_group(required=True)
+	g.add_argument('-t', action='store_true',
+		help="Copy currently-selected papers from Papers to location")
+	g.add_argument('-f', action='store_true',
+		help="Copy all updated papers from location to Papers database")
+	p.add_argument('-n', action='store_true',
+		help="Don't copy files but show what would have been done")
+	p.add_argument('dir',
+		help="Directory for files to be copied to with -t or from with -f")
+	p.add_argument('root', nargs='?',
+		help="Directory where correspondence between Papers and copied files will be stored")
+
+	args = p.parse_args()
+	args.root = args.root or args.dir
+
+	if args.t:
+		papers_to_dir(args.dir, args.root, test=args.n)
+	elif args.f:
+		papers_from_dir(args.dir, test=args.n)
