@@ -77,7 +77,7 @@ def get_papers():
 def papers_to_dir(dest, root=None, pickledict='.papers.pickle', test=False):
 	"""Copy papers from Papers to dest, updating correspondence dict on
 	root/.papers.pickle. If root is None, search parent directories of
-	dest to find pickledict. Don't overwrite files newere than Papers
+	dest to find pickledict. Don't overwrite files newer than Papers
 	source."""
 	if root is None:
 		pfile = search_parents(dest, pickledict)
