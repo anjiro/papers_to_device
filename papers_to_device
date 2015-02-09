@@ -134,7 +134,7 @@ def papers_from_dir(root, pickledict='.papers.pickle', test=False):
 	Update pickledict to remove missing files on root.
 	"""
 	pfile = os.path.join(root, pickledict)
-	cd = unpickle(pfile)
+	cd = cPickle.load(open(pfile))
 	update_pickle = False
 	for destfn, origfn in cd.iteritems():
 		destfn = os.path.join(root, destfn)
