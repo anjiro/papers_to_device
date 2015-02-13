@@ -1,12 +1,26 @@
 #!/usr/bin/env python
 
-import subprocess, os, shutil, re, cPickle
+import subprocess, os, shutil, re, cPickle, sys, time
 from colortext import colortext
+
+global _debug
+_debug = False
 
 def c(s):
 	return colortext(s, 'cyan')
 def y(s):
 	return colortext(s, 'yellow')
+def r(s):
+	return colortext(s, 'red')
+
+def debug(m):
+	if not _debug:
+		return
+	sys.stderr.write(r(m + '\n'))
+
+def t(x):
+	from datetime import datetime
+	return datetime.fromtimestamp(x).strftime('%D %T')
 
 
 def search_parents(path, filename):
@@ -69,96 +83,135 @@ def get_papers():
 	if e:
 		raise IOError("ERROR: %s" % e)
 
-	print "\n\n%s\n\n" % o
-
 	return [p.strip().split('\t') for p in o.split('\n') if p]
 
 
-def papers_to_dir(dest, root=None, pickledict='.papers.pickle', test=False):
+def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 	"""Copy papers from Papers to dest, updating correspondence dict on
 	root/.papers.pickle. If root is None, search parent directories of
-	dest to find pickledict. Don't overwrite files newer than Papers
+	dest to find corrdict. Don't overwrite files newer than Papers
 	source."""
+	#Find the corrdict
 	if root is None:
-		pfile = search_parents(dest, pickledict)
+		pfile = search_parents(dest, corrdict)
+		debug("Found pickle file at %s" % pfile)
 		if pfile is None:
-			raise ValueError("Couldn't find dictionary %s; specify root" % pickledict)
+			print r("Couldn't find dictionary %s; specify root" % corrdict)
+			sys.exit(-1)
+		root = os.path.dirname(pfile)
 	else:
-		pfile = os.path.join(root, pickledict)
+		pfile = os.path.join(root, corrdict)
+		debug("Set pickle file to %s" % pfile)
 
+	#Open the corrdict
 	try:
 		cd = cPickle.load(open(pfile))
 	except IOError:
 		cd = {}
 	update_pickle = False
 
+	papernames = map(os.path.basename, cd.keys())
+
 	if not os.path.exists(dest):
 		os.makedirs(dest)
+
+	#Fetch selected papers from Papers and operate on each
 	for origfn,d in get_papers():
-		destfn = os.path.join(dest, re.sub(':\s', ' - ', d)) #remove colons in names
-		cd[os.path.relpath(destfn, root)] = origfn
+		papername = re.sub(':\s', ' - ', d)
+		destfn   = os.path.join(dest, papername)  #remove colons in names
+		destpath = os.path.relpath(destfn, root)
+		if papername in papernames:
+			print "%s already in %s, not copying" % (c(papername),
+					os.path.dirname(destpath))
+			continue
+		cd[destpath] = origfn
 
 		#Don't update changed or older files
 		if os.path.exists(destfn):
 			otime = os.stat(origfn).st_mtime 
 			dtime = os.stat(destfn).st_mtime
 			if otime == dtime:
-				print "Not updating unchanged files\n  %s\nand\n	%s\n" % (
+				print "Not updating unchanged files\n  %s\nand\n  %s\n" % (
 					c(destfn), y(origfn))
 				continue
 			elif otime > dtime:
-				print "WARNING: Not overwriting newer file\n	%s\nwith older\n %s\n" % (
+				print "WARNING: Not overwriting newer file\n  %s\nwith older\n %s\n" % (
 					c(destfn), y(origfn))
 				continue
 
-		print "%s => %s" % (y(os.path.basename(origfn)),
-			c(os.path.basename(destfn)))
+		print c(os.path.basename(destfn))
 		update_pickle = True
+
+		#Try to copy the file. Sometimes the USB connection seems to get
+		# overwhelmed, so try up to 3 times with a .5s pause in between.
 		if not test:
-			shutil.copy2(origfn, destfn)
+			tries = 0
+			err = (None, None, None)
+			while tries < 3:
+				try:
+					shutil.copy2(origfn, destfn)
+				except OSError as (errno, strerr):
+					if errno == 22:
+						print "OSError, will try again"
+						err = sys.exc_info()
+						p = subprocess.Popen("sync", shell=True)
+						sts = os.waitpid(p.pid, 0)[1]
+						time.sleep(.5)
+						tries += 1
+					else:
+						raise
+				else:
+					break
+			if tries >= 3:
+				raise err[0], err[1], err[2]
 
 	if update_pickle:
 		if test:
 			from pprint import pprint
-			print "Would pickle the following to %s" % pickledict
+			print "Would pickle the following to %s" % corrdict
 			pprint(cd)
 		else:
 			cPickle.dump(cd, open(pfile, 'w'),  cPickle.HIGHEST_PROTOCOL)
 
 
-def papers_from_dir(root, pickledict='.papers.pickle', test=False):
-	"""Copy papers indicated in pickledict on root to original
+def papers_from_dir(root, corrdict='.papers.pickle', test=False):
+	"""Copy papers indicated in corrdict on root to original
 	destinations if:
 		- destination file still exists
 		- file on root has changed
-	Update pickledict to remove missing files on root.
+	Update corrdict to remove missing files on root.
 	"""
-	pfile = os.path.join(root, pickledict)
+	pfile = os.path.join(root, corrdict)
 	cd = cPickle.load(open(pfile))
+	debug("Loaded %d papers from %s" % (len(cd.keys()), pfile))
 	update_pickle = False
 	for destfn, origfn in cd.iteritems():
 		destfn = os.path.join(root, destfn)
 		if os.path.exists(origfn):
 			if os.stat(destfn).st_mtime > os.stat(origfn).st_mtime:
-				 print "%s => %s" % (c(os.path.basename(destfn)),
+				 print "%s =>\n  %s" % (c(os.path.basename(destfn)),
 					 y(os.path.basename(origfn)))
 				 if not test:
 					 shutil.copy2(destfn, origfn)
+			else:
+				debug("Not copying %s => %s\n    %s <= %s" % (
+					os.path.basename(destfn), os.path.basename(origfn),
+					t(os.stat(destfn).st_mtime), t(os.stat(origfn).st_mtime)))
 		else:
 			print "Remove missing from dict: %s" % origfn
-			del(pickledict[origfn])
+			del(corrdict[origfn])
 			update_pickle = True
 	if update_pickle:
 		if test:
 			from pprint import pprint
-			print "Would pickle the following to %s\n" % pickledict
+			print "Would pickle the following to %s\n" % corrdict
 			pprint(cd)
 		else:
-			cPickle.dump(cd, open(pickledict, 'w'),  cPickle.HIGHEST_PROTOCOL)
+			cPickle.dump(cd, open(corrdict, 'w'),  cPickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":
-	import sys, argparse
+	import argparse
 
 	p = argparse.ArgumentParser(
 		description="Copy Papers files to or from a location")
@@ -169,13 +222,20 @@ if __name__ == "__main__":
 		help="Copy all updated papers from location to Papers database")
 	p.add_argument('-n', action='store_true',
 		help="Don't copy files but show what would have been done")
+	p.add_argument('-d', action='store_true',
+		help="Show debug messages")
 	p.add_argument('dir',
 		help="Directory for files to be copied to with -t or from with -f")
 	p.add_argument('root', nargs='?',
 		help="Directory where correspondence between Papers and copied files will be stored")
 
+	if not sys.argv[1:]:
+		p.print_help()
+		sys.exit(0)
+
 	args = p.parse_args()
-	args.root = args.root or args.dir
+	#args.root = args.root or args.dir
+	_debug = args.d
 
 	if args.t:
 		papers_to_dir(args.dir, args.root, test=args.n)
