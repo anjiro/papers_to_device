@@ -110,7 +110,7 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 		cd = {}
 	update_pickle = False
 
-	papernames = map(os.path.basename, cd.keys())
+	papernames = {os.path.basename(k): k for k in cd.keys()}
 
 	if not os.path.exists(dest):
 		os.makedirs(dest)
@@ -122,7 +122,7 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 		destpath = os.path.relpath(destfn, root)
 		if papername in papernames:
 			debug("%s already in %s, not copying" % (c(papername),
-					os.path.dirname(destpath)))
+					os.path.dirname(papernames[papername])))
 			continue
 		cd[destpath] = origfn
 
