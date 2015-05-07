@@ -96,7 +96,7 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 		pfile = search_parents(dest, corrdict)
 		debug("Found pickle file at %s" % pfile)
 		if pfile is None:
-			print r("Couldn't find dictionary %s; specify root" % corrdict)
+			sys.stderr.write(r("Couldn't find dictionary %s; specify root" % corrdict))
 			sys.exit(-1)
 		root = os.path.dirname(pfile)
 	else:
@@ -121,8 +121,8 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 		destfn   = os.path.join(dest, papername)  #remove colons in names
 		destpath = os.path.relpath(destfn, root)
 		if papername in papernames:
-			print "%s already in %s, not copying" % (c(papername),
-					os.path.dirname(destpath))
+			debug("%s already in %s, not copying" % (c(papername),
+					os.path.dirname(destpath)))
 			continue
 		cd[destpath] = origfn
 
@@ -131,12 +131,12 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 			otime = os.stat(origfn).st_mtime 
 			dtime = os.stat(destfn).st_mtime
 			if otime == dtime:
-				print "Not updating unchanged files\n  %s\nand\n  %s\n" % (
-					c(destfn), y(origfn))
+				debug("Not updating unchanged files\n  %s\nand\n  %s\n" % (
+					c(destfn), y(origfn)))
 				continue
 			elif otime > dtime:
-				print "WARNING: Not overwriting newer file\n  %s\nwith older\n %s\n" % (
-					c(destfn), y(origfn))
+				debug("WARNING: Not overwriting newer file\n  %s\nwith older\n %s\n" % (
+					c(destfn), y(origfn)))
 				continue
 
 		print c(os.path.basename(destfn))
@@ -152,7 +152,7 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 					shutil.copy2(origfn, destfn)
 				except OSError as (errno, strerr):
 					if errno == 22:
-						print "OSError, will try again"
+						sys.stderr.write("OSError, will try again")
 						err = sys.exc_info()
 						p = subprocess.Popen("sync", shell=True)
 						sts = os.waitpid(p.pid, 0)[1]
