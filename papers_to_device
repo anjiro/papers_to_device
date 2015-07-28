@@ -184,30 +184,36 @@ def papers_from_dir(root, corrdict='.papers.pickle', test=False):
 	pfile = os.path.join(root, corrdict)
 	cd = cPickle.load(open(pfile))
 	debug("Loaded %d papers from %s" % (len(cd.keys()), pfile))
+	del_list = []
 	update_pickle = False
+
 	for destfn, origfn in cd.iteritems():
-		destfn = os.path.join(root, destfn)
+		destfn_path = os.path.join(root, destfn)
 		if os.path.exists(origfn):
-			if os.stat(destfn).st_mtime > os.stat(origfn).st_mtime:
-				 print "%s =>\n  %s" % (c(os.path.basename(destfn)),
+			if os.stat(destfn_path).st_mtime > os.stat(origfn).st_mtime:
+				 print "%s =>\n  %s" % (c(os.path.basename(destfn_path)),
 					 y(os.path.basename(origfn)))
 				 if not test:
-					 shutil.copy2(destfn, origfn)
+					 shutil.copy2(destfn_path, origfn)
 			else:
 				debug("Not copying %s => %s\n    %s <= %s" % (
-					os.path.basename(destfn), os.path.basename(origfn),
-					t(os.stat(destfn).st_mtime), t(os.stat(origfn).st_mtime)))
+					os.path.basename(destfn_path), os.path.basename(origfn),
+					t(os.stat(destfn_path).st_mtime), t(os.stat(origfn).st_mtime)))
 		else:
-			print "Remove missing from dict: %s" % origfn
-			del(corrdict[origfn])
+			print "Remove from dict\n    %s\n because original file\n %s\nis missing" %\
+				(destfn, origfn)
+			del_list.append(destfn)
 			update_pickle = True
+
 	if update_pickle:
+		for destfn in del_list:
+			del(cd[destfn])
 		if test:
 			from pprint import pprint
-			print "Would pickle the following to %s\n" % corrdict
+			print "Would pickle the following to %s\n" % pfile
 			pprint(cd)
 		else:
-			cPickle.dump(cd, open(corrdict, 'w'),  cPickle.HIGHEST_PROTOCOL)
+			cPickle.dump(cd, open(pfile, 'w'),  cPickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":
