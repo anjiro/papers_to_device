@@ -44,10 +44,11 @@ def get_papers():
 	set z to ""
 	tell application "Papers"
 		repeat with p in (selected publications of front library window as list)
-			set original_filename to the full path of the primary file item of p
-			set new_filename to my strip(the publication year of p) & "-" & my strip(the family name of the first author item of p) & " - " & my strip(the title of p) & ".pdf"
-			set l to original_filename & "	" & new_filename
-			set z to z & "\n" & l
+			if p's primary file item is not missing value then
+				set original_filename to the full path of the primary file item of p
+				set new_filename to my strip(the publication year of p) & "-" & my strip(the family name of the first author item of p) & " - " & my strip(the title of p) & ".pdf"
+				set l to original_filename & "	" & new_filename
+				set z to z & "\n" & l
 		end repeat
 	end tell
 	return z
