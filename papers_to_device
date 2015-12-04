@@ -88,12 +88,8 @@ def get_papers():
 	return [p.strip().split('\t') for p in o.split('\n') if p]
 
 
-def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
-	"""Copy papers from Papers to dest, updating correspondence dict on
-	root/.papers.pickle. If root is None, search parent directories of
-	dest to find corrdict. Don't overwrite files newer than Papers
-	source."""
-	#Find the corrdict
+def get_corrdict(root, corrdict='.papers.pickle'):
+	"""Find and return the path to the correspondence dictionary."""
 	if root is None:
 		pfile = search_parents(dest, corrdict)
 		debug("Found pickle file at %s" % pfile)
@@ -104,6 +100,50 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 	else:
 		pfile = os.path.join(root, corrdict)
 		debug("Set pickle file to %s" % pfile)
+	return pfile
+
+
+def verify_corrdict(pfile, test=False):
+	"""Verify that all papers in the corrdict are present on both source
+	and destination. If test is not False, remove papers from the dict
+	that have either source or dest file missing; leave actual files on
+	disk alone."""
+	#Open the corrdict
+	try:
+		cd = cPickle.load(open(pfile))
+	except IOError:
+		cd = {}
+
+	badfiles = set()
+
+	for d, origfn in cd.iteritems():
+		destfn = os.path.join(root, d)
+		if not os.path.exists(destfn):
+			debug("Missing paper file on {root}: {destfn}".format(root=root,
+				destfn=destfn))
+			badfiles.add(d)
+		if not os.path.exists(origfn):
+			debug("Missing file in Papers: {origfn}".format(origfn=origfn))
+			badfiles.add(d)
+
+	if test:
+		from pprint import pprint
+		print "Would remove the following keys from the corrdict:"
+		pprint(badfiles)
+	else:
+		for k in badfiles:
+			print 'del cd[%s]' % k
+			del(cd[k])
+		cPickle.dump(cd, open(pfile, 'w'),  cPickle.HIGHEST_PROTOCOL)
+
+
+def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
+	"""Copy papers from Papers to dest, updating correspondence dict on
+	root/.papers.pickle. If root is None, search parent directories of
+	dest to find corrdict. Don't overwrite files newer than Papers
+	source."""
+	pfile = get_corrdict(root, corrdict)
+	verify_corrdict(pfile, test)
 
 	#Open the corrdict
 	try:
@@ -183,7 +223,8 @@ def papers_from_dir(root, corrdict='.papers.pickle', test=False):
 		- file on root has changed
 	Update corrdict to remove missing files on root.
 	"""
-	pfile = os.path.join(root, corrdict)
+	pfile = get_corrdict(root, corrdict)
+	verify_corrdict(pfile, test)
 	cd = cPickle.load(open(pfile))
 	debug("Loaded %d papers from %s" % (len(cd.keys()), pfile))
 	del_list = []
