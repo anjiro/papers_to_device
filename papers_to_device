@@ -88,7 +88,7 @@ def get_papers():
 	return [p.strip().split('\t') for p in o.split('\n') if p]
 
 
-def verify_corrdict(pfile, test=False):
+def verify_corrdict(root, pfile, test=False):
 	"""Verify that all papers in the corrdict are present on both source
 	and destination. If test is not False, remove papers from the dict
 	that have either source or dest file missing; leave actual files on
@@ -139,7 +139,7 @@ def papers_to_dir(dest, root=None, corrdict='.papers.pickle', test=False):
 		pfile = os.path.join(root, corrdict)
 		debug("Set pickle file to %s" % pfile)
 
-	verify_corrdict(pfile, test)
+	verify_corrdict(root, pfile, test)
 
 	#Open the corrdict
 	try:
@@ -220,7 +220,7 @@ def papers_from_dir(root, corrdict='.papers.pickle', test=False):
 	Update corrdict to remove missing files on root.
 	"""
 	pfile = os.path.join(root, corrdict)
-	verify_corrdict(pfile, test)
+	verify_corrdict(root, pfile, test)
 	cd = cPickle.load(open(pfile))
 	debug("Loaded %d papers from %s" % (len(cd.keys()), pfile))
 	del_list = []
